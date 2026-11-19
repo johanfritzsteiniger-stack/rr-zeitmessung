@@ -601,7 +601,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script>
 "use strict";
-const APP_VERSION='1.1';
+const APP_VERSION='1.1.1';
 const _realNow=Date.now.bind(Date);let CLOCK_OFF=0;try{CLOCK_OFF=+(localStorage.getItem('rr_clock_off')||0)||0}catch(e){}
 Date.now=()=>_realNow()+CLOCK_OFF;
 const KEY='rr_zeitmessung_v2',KEY_V1='rr_prolog_v1';
@@ -1521,7 +1521,8 @@ function buildRecords(){const m=new Map(),nn=v=>v===undefined?null:v;
       (a.misses||[]).forEach((v,i)=>{if(Number.isInteger(v))m.set(`e:${a.uid}:ms${i}`,{kind:'entry',comp_id:c.id,data:{part:a.uid,k:'ms',i,v}})})});
     c.finishes.forEach(f=>{if(!f.uid)f.uid=uuid();m.set('f:'+f.uid,{kind:'fin',comp_id:c.id,data:{bib:nn(f.bib),t:f.t,manual:!!f.manual}})})});
   return m}
-const hashOf=r=>r.kind+'|'+JSON.stringify(r.data);
+function stable(v){if(v===null||typeof v!=='object')return JSON.stringify(v===undefined?null:v);if(Array.isArray(v))return '['+v.map(stable).join(',')+']';return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}'}
+const hashOf=r=>r.kind+'|'+stable(r.data);
 /* Fremde Datensätze in den lokalen Stand übernehmen */
 function ensureComp(id){let c=DB.comps.find(x=>x.id===id);if(!c){c=fix(def());c.id=id;c.settings.title='(wird geladen)';DB.comps.push(c)}return c}
 function findPart(uid){for(const c of DB.comps){const a=c.athletes.find(x=>x.uid===uid);if(a)return [c,a]}return [null,null]}
@@ -1606,8 +1607,12 @@ async function syncNow(manual){if(!LOGGED()||SYNCING)return;if(!navigator.onLine
     if(manual)toast(`Abgleich ok · ${sent} gesendet, ${got} empfangen`)}
   catch(e){SYNC_STATE=navigator.onLine?'err':'offline';SY.err=String(e.message||e).slice(0,160);sySave();if(manual)toast('Abgleich fehlgeschlagen: '+SY.err)}
   finally{SYNCING=false;pill();if(changed)softRender()}}
-function softRender(){const ae=document.activeElement;if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)||document.querySelector('#modal[style*="flex"]')){NEED_RENDER=true;return}render()}
-document.addEventListener('focusout',()=>{if(NEED_RENDER)setTimeout(()=>{const ae=document.activeElement;if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))){NEED_RENDER=false;render()}},50)});
+/* Nach einem Abgleich nur neu zeichnen, wenn niemand gerade etwas eintippt */
+function userBusy(){const ae=document.activeElement;if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return true;
+  if(document.querySelector('#modal[style*="flex"]'))return true;
+  return [...document.querySelectorAll('#main input')].some(i=>(i.type==='text'||i.type==='number'||i.type==='search'||i.type==='email'||i.type==='date'||!i.type)&&i.value!==i.defaultValue)}
+function softRender(){if(userBusy()){NEED_RENDER=true;return}NEED_RENDER=false;render()}
+setInterval(()=>{if(NEED_RENDER&&!userBusy()){NEED_RENDER=false;render()}},2000);
 function syncSoon(){if(!LOGGED())return;clearTimeout(SYNC_T);SYNC_T=setTimeout(()=>syncNow(false),800)}
 setInterval(()=>{if(LOGGED()&&document.visibilityState==='visible'&&navigator.onLine)syncNow(false)},5000);
 setInterval(()=>{if(LOGGED())measureClock(false)},10*60*1000);
