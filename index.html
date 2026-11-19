@@ -143,6 +143,8 @@ tr.warnrow td{background:#fff7ed}
 .mseg button:active{background:var(--lila-l)}
 th.mcol,td.mcol{text-align:center;white-space:nowrap}
 .mtime{font-size:11px;color:var(--mut);min-height:14px;margin-top:2px;font-variant-numeric:tabular-nums}.mtime .btn{padding:0 5px;font-size:11px}
+#main.ro .card input,#main.ro .card select,#main.ro .card textarea,#main.ro .card button:not(.ro-ok),#main.ro .runners,#main.ro .zbtn{pointer-events:none;opacity:.55}
+#main.ro details summary{pointer-events:auto}
 .r2f .warnlink{color:var(--bad);font-weight:700}
 .rc2.off{opacity:.55;background:#faf9fc}.rc2.off .bib3{background:var(--mut)}
 .offinfo{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:14px;margin-top:auto;padding:12px 0 4px;font-variant-numeric:tabular-nums}
@@ -601,7 +603,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script>
 "use strict";
-const APP_VERSION='1.1.1';
+const APP_VERSION='1.2';
 const _realNow=Date.now.bind(Date);let CLOCK_OFF=0;try{CLOCK_OFF=+(localStorage.getItem('rr_clock_off')||0)||0}catch(e){}
 Date.now=()=>_realNow()+CLOCK_OFF;
 const KEY='rr_zeitmessung_v2',KEY_V1='rr_prolog_v1';
@@ -742,7 +744,9 @@ function render(){
   h+=({wettkaempfe:vComps,sportler:vPeople,setup:vSetup,start:()=>KNOPF()?vStartKnopf():(GUN()&&!raceOn()?vStartWait():vStart()),schiessen:vShoot,ziel:vZiel,ergebnis:vErg})[TAB]();
   const keep={};['zBib','oBib','sBib'].forEach(i=>{const e=document.getElementById(i);if(e)keep[i]=e.value});
   const fid=document.activeElement&&document.activeElement.id;
+  if(S&&CLOSED()&&isCompTab(TAB))h=`<div class="banner" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">🔒 <b>Abgeschlossen</b> am ${esc(fmtDate((S.settings.closedAt||'').slice(0,10)))} – nur Ansicht.<span style="flex:1"></span><button class="btn small alt" onclick="reopenAsk()">Wieder öffnen</button></div>`+h;
   $('#main').innerHTML=h;
+  $('#main').classList.toggle('ro',!!(S&&CLOSED()&&['setup','start','ziel','schiessen'].includes(TAB)));
   for(const i in keep){const e=document.getElementById(i);if(e)e.value=keep[i]}
   if(fid&&['zBib','oBib','sBib'].includes(fid)){const e=document.getElementById(fid);if(e)e.focus()}
   lastRunKey=runKey();
@@ -750,7 +754,7 @@ function render(){
 }
 
 /* ---------- WETTKÄMPFE ---------- */
-function compStatus(c){return withComp(c,()=>{const rows=compute();if(!rows.length)return['leer',''];if(ENDED())return['beendet','ok'];
+function compStatus(c){return withComp(c,()=>{if(CLOSED())return['abgeschlossen','ok'];const rows=compute();if(!rows.length)return['leer',''];if(ENDED())return['beendet','ok'];
   const act=rows.filter(r=>!['DNS','DNF','DSQ'].includes(r.status)),fin=act.filter(r=>r.status==='OK').length;
   if(act.length&&fin===act.length)return['beendet','ok'];
   if(raceOn()||rows.some(r=>r.status==='läuft'||r.status==='OK'))return['läuft','run'];return['geplant','']})}
@@ -758,9 +762,10 @@ const TYPE_INFO={sprint:'Intervallstart, 2 Schießeinlagen (L,S), Strafzeit',ein
 let WIZ={type:'sprint',title:'',date:today(),sel:new Set(),q:'',from:''};
 let WIZOPEN=null;
 function vComps(){
-  const list=DB.comps.slice().sort((x,y)=>(y.settings.date||'').localeCompare(x.settings.date||'')||(y.createdAt||'').localeCompare(x.createdAt||''));
-  if(WIZOPEN===null)WIZOPEN=!list.length;
-  const top=`<div class="hometop"><div><h2 style="margin:0">Wettkämpfe</h2><p class="hint" style="margin:2px 0 0">${list.length?list.length+' gespeichert · '+(LOGGED()?'mit Cloud abgeglichen':'nur auf diesem Gerät'):'Noch kein Wettkampf angelegt'}</p></div>
+  const all=DB.comps.slice().sort((x,y)=>(y.settings.date||'').localeCompare(x.settings.date||'')||(y.createdAt||'').localeCompare(x.createdAt||''));
+  const list=all.filter(c=>!c.settings.closed),arch=all.filter(c=>c.settings.closed);
+  if(WIZOPEN===null)WIZOPEN=!all.length;
+  const top=`<div class="hometop"><div><h2 style="margin:0">Wettkämpfe</h2><p class="hint" style="margin:2px 0 0">${all.length?list.length+' aktiv · '+arch.length+' im Archiv · '+(LOGGED()?'mit Cloud abgeglichen':'nur auf diesem Gerät'):'Noch kein Wettkampf angelegt'}</p></div>
 ${WIZOPEN?'':'<button class="btn acc big" onclick="WIZOPEN=true;render()">+ Neuer Wettkampf</button>'}</div>`;
   const tiles=list.length&&!WIZOPEN?`<div class="comptiles">${list.map(c=>{const[st,cl]=compStatus(c);return `<div class="ctile">
 <div class="ctop"><span class="tag ${cl}">${st}</span><span class="hint">${esc(fmtDate(c.settings.date))}</span></div>
@@ -768,8 +773,8 @@ ${WIZOPEN?'':'<button class="btn acc big" onclick="WIZOPEN=true;render()">+ Neue
 <div class="hint">${TYPES[c.type]} · ${c.athletes.length} Starter</div>
 <div class="cbtns"><button class="btn" onclick="openComp('${c.id}')">Öffnen</button><span style="flex:1"></span>
 <button class="linkbtn" onclick="copyComp('${c.id}')" title="Einstellungen und Starter übernehmen, ohne Zeiten">Kopieren</button>
-<button class="linkbtn" onclick="delCompAsk('${c.id}')">Löschen</button></div></div>`}).join('')}</div>`:'';
-  return top+(WIZOPEN?vWizard(list):tiles)+`
+<button class="linkbtn" onclick="delCompAsk('${c.id}')">Löschen</button></div></div>`}).join('')}</div>`:(!WIZOPEN&&arch.length?'<p class="hint">Keine aktiven Wettkämpfe. Lege oben einen neuen an.</p>':'');
+  return top+(WIZOPEN?vWizard(all):tiles)+(arch.length&&!WIZOPEN?vArchive(arch):'')+`
 ${installBox()}${syncBox()}<details class="more"><summary>Sportler, Backup & Probelauf</summary>
 <div class="row" style="margin-top:10px"><button class="btn alt" onclick="go('sportler')">Sportlerliste verwalten (${DB.people.length})</button>
 <button class="btn alt" onclick="exportAll(true)">Gesamt-Backup herunterladen</button><button class="btn alt" onclick="exportAll(false)">Gesamt-Backup kopieren</button>
@@ -816,7 +821,7 @@ function wizDo(){const c=newComp(WIZ.type,(WIZ.title||'').trim()||TYPES[WIZ.type
   DB.comps.push(c);WIZ={type:'sprint',title:'',date:today(),sel:new Set(),q:'',from:''};WIZOPEN=false;openComp(c.id,'setup');toast('Wettkampf angelegt – jetzt Startreihenfolge und Regeln festlegen')}
 function closeComp(){DB.activeId=null;S=null;WIZOPEN=null;save();go('wettkaempfe')}
 function openComp(id,tab){const c=DB.comps.find(x=>x.id===id);if(!c)return;S=c;DB.activeId=id;save();
-  go(tab||(raceOn()?'ziel':(c.athletes.length?'start':'setup')))}
+  go(tab||(c.settings.closed?'ergebnis':raceOn()?'ziel':(c.athletes.length?'start':'setup')))}
 function copyParticipants(src,c){if(!src)return;src.athletes.slice().sort((a,b)=>(a.bib??1e9)-(b.bib??1e9)).forEach(p=>{
   const q={id:c.nextId++,uid:uuid(),pid:p.pid,bib:p.bib,start:p.start||'',status:'',misses:[]};if(p.clsOverride)q.clsOverride=p.clsOverride;c.athletes.push(attach(q))})}
 function copyComp(id){const src=DB.comps.find(x=>x.id===id);if(!src)return;const c=newComp(src.type,src.settings.title+' (Kopie)',today());
@@ -827,6 +832,30 @@ function delCompAsk(id){const c=DB.comps.find(x=>x.id===id);if(!c)return;
     DB.comps=DB.comps.filter(x=>x.id!==id);if(DB.activeId===id){DB.activeId=null;S=null}
     const used=new Set(DB.comps.flatMap(x=>x.athletes.map(a=>a.pid)));DB.people=DB.people.filter(p=>!p.demo||used.has(p.id));
     save();render();toast('Wettkampf gelöscht')},'Löschen')}
+
+/* ---------- ABSCHLIESSEN & ARCHIV ---------- */
+let AQ='';
+function winners(c){return withComp(c,()=>{const rows=compute();return classes().map(k=>{const r=rank(rows.filter(x=>(x.a.cls||'—')===k)).find(x=>x.status==='OK'&&x.rank===1);return r?{cls:k,name:r.a.name,t:r.total}:null}).filter(Boolean)})}
+function vArchive(arch){const q=AQ.toLowerCase(),years=[...new Set(arch.map(c=>(c.settings.date||'').slice(0,4)).filter(Boolean))];
+  const list=arch.filter(c=>!q||(c.settings.title||'').toLowerCase().includes(q)||TYPES[c.type].toLowerCase().includes(q)||(c.settings.date||'').includes(q)||c.athletes.some(a=>a.name.toLowerCase().includes(q)));
+  const by={};list.forEach(c=>{const y=(c.settings.date||'').slice(0,4)||'ohne Datum';(by[y]=by[y]||[]).push(c)});
+  return `<div class="card"><div class="row" style="justify-content:space-between;margin:0 0 8px"><h2 style="margin:0">Archiv (${arch.length})</h2>
+<input id="aSearch" placeholder="Suchen: Titel, Format, Datum, Sportler …" value="${esc(AQ)}" style="min-width:240px" oninput="AQ=this.value;clearTimeout(window._aq);window._aq=setTimeout(()=>{render();const i=$('#aSearch');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
+${Object.keys(by).sort().reverse().map(y=>`<h3>${esc(y)}</h3><div style="overflow-x:auto"><table class="res arch">
+<tr><th>Datum</th><th>Wettkampf</th><th>Format</th><th class="num">Starter</th><th>Sieger</th><th></th></tr>
+${by[y].map(c=>{const w=winners(c);return `<tr><td class="num" style="text-align:left">${esc(fmtDate(c.settings.date))}</td><td><b>${esc(c.settings.title)}</b></td><td>${TYPES[c.type]}</td><td class="num">${c.athletes.length}</td>
+<td class="hint" style="font-size:12px">${w.map(x=>`<b>${esc(x.cls)}</b> ${esc(x.name)}`).join(' · ')||'–'}</td>
+<td style="white-space:nowrap"><button class="btn small" onclick="openComp('${c.id}','ergebnis')">Ergebnis</button> <button class="btn small alt" onclick="archPDF('${c.id}')">PDF</button> <button class="linkbtn" onclick="copyComp('${c.id}')" title="Einstellungen und Starter als neuen Wettkampf übernehmen">Kopieren</button><button class="linkbtn" onclick="delCompAsk('${c.id}')">Löschen</button></td></tr>`}).join('')}
+</table></div>`).join('')||'<p class="hint">Keine Treffer.</p>'}
+<p class="hint">Abgeschlossene Wettkämpfe sind schreibgeschützt. Über „Ergebnis“ öffnen, dort lassen sie sich bei Bedarf wieder öffnen, kopieren oder als Grundlage für einen Verfolger nutzen.</p></div>`}
+function archPDF(id){const c=DB.comps.find(x=>x.id===id);if(!c)return;const prev=S;S=c;try{exportPDF()}finally{S=prev}}
+function closeCompAsk(){const rows=compute(),on=rows.filter(r=>r.status==='läuft').length,wait=rows.filter(r=>r.status==='wartet'&&raceOn()).length;
+  const missF=rows.filter(r=>r.status==='OK'&&r.ms.some(v=>!Number.isInteger(v))).length,noBib=S.finishes.filter(f=>f.bib==null||!byBib(f.bib)).length;
+  const warn=[on?`<b>${on}</b> Läufer noch auf der Strecke → werden als DNF gewertet`:'',wait?`<b>${wait}</b> noch nicht gestartet → DNS`:'',missF?`<b>${missF}</b> Läufer im Ziel mit fehlenden Schießfehlern`:'',noBib?`<b>${noBib}</b> Zielzeit(en) ohne gültige Startnummer`:''].filter(Boolean);
+  ask(`<b>Wettkampf „${esc(S.settings.title)}“ abschließen?</b><br>Er wird ins Archiv verschoben und ist danach schreibgeschützt (Ergebnis, PDF und CSV bleiben abrufbar).${warn.length?`<div class="banner" style="margin-top:10px">⚠ Bitte prüfen:<br>${warn.join('<br>')}</div>`:''}`,closeComp2,'Abschließen')}
+function closeComp2(){if(raceOn()&&!Number.isFinite(S.settings.raceEnd))endRace();
+  S.settings.closed=true;S.settings.closedAt=nowIso();save();toast('Wettkampf abgeschlossen und archiviert');render()}
+function reopenAsk(){ask('Wettkampf wieder öffnen? Danach können Zeiten, Fehler und Einstellungen wieder bearbeitet werden.',()=>{delete S.settings.closed;delete S.settings.closedAt;save();render();toast('Wettkampf wieder geöffnet')},'Wieder öffnen')}
 
 /* ---------- SPORTLER ---------- */
 let PQ='';
@@ -1107,7 +1136,8 @@ function startRace(){const t=Math.round((Date.now()+10000)/100)*100;S.settings.r
 function resetRaceAsk(){const has=S.finishes.length||S.laps.length||S.athletes.some(a=>(a.mat&&a.mat.some(Boolean))||(a.misses&&a.misses.some(Number.isInteger)));if(has)ask('Rennstart zurücksetzen? <b>Alle Zielzeiten, Mattenzeiten und Schießfehler dieses Wettkampfs werden gelöscht</b> – auch im Tab „Fehler & Korrektur“ und im Ergebnis. Starterliste und Einstellungen bleiben erhalten.',resetRace,'Alles zurücksetzen');else resetRace()}
 function resetRace(){S.settings.raceStart=null;delete S.settings.raceEnd;S.finishes=[];S.laps=[];POSORD=null;beeped=new Set();
   S.athletes.forEach(a=>{if(a.autoSt||a.status==='DNF'){a.status=''}delete a.autoSt;delete a.slot;delete a.startT;a.mat=[];a.misses=[]});save();render();toast('Rennen zurückgesetzt – alle Zeiten und Fehler gelöscht')}
-const ENDED=()=>S&&Number.isFinite(S.settings.raceEnd);
+const CLOSED=()=>S&&!!S.settings.closed;
+const ENDED=()=>S&&(Number.isFinite(S.settings.raceEnd)||!!S.settings.closed);
 function vEnded(){const e=S.settings.raceEnd,rows=compute(),fin=rows.filter(r=>r.status==='OK').length,dnf=rows.filter(r=>r.status==='DNF').length,dns=rows.filter(r=>r.status==='DNS').length,st=S.settings.raceStart;
   return `<div class="card" style="text-align:center"><div style="font-size:15px;color:var(--mut)">Rennen beendet um ${fmtTOD(e).slice(0,8)}</div>
 <div class="cd" style="color:var(--lila-d)">${Number.isFinite(st)?fmtDur(e-st):'■'}</div><div class="hint">${Number.isFinite(st)?'Gesamte Renndauer · ':''}${fin} im Ziel${dnf?' · '+dnf+' DNF':''}${dns?' · '+dns+' DNS':''}</div>
@@ -1171,7 +1201,7 @@ ${wait.map(a=>`<tr><td><b>${a.bib}</b></td><td>${esc(a.name)}</td><td>${esc(a.cl
 <td style="white-space:nowrap"><button class="btn small" onpointerdown="startAth(${a.id},event)">START</button> <button class="btn small alt" onclick="setA(${a.id},'status','DNS')">DNS</button></td></tr>`).join('')||'<tr><td colspan="4" class="hint">–</td></tr>'}
 </table></div>`;
 }
-function startAth(id,ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();if(ENDED()){toast('Rennen ist beendet – unter Start „Rennen fortsetzen“');return}const a=S.athletes.find(x=>x.id===id);if(!a)return;
+function startAth(id,ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();if(ENDED()){toast(CLOSED()?'Wettkampf ist abgeschlossen – nur Ansicht':'Rennen ist beendet – unter Start „Rennen fortsetzen“');return}const a=S.athletes.find(x=>x.id===id);if(!a)return;
   if(Number.isFinite(a.startT)){toast(`Nr. ${a.bib} ist bereits gestartet`);return}
   a.startT=t;if(a.status==='DNS')a.status='';save();render();if(AC)beep(1320,.25);toast(`Nr. ${a.bib} ${a.name} gestartet · ${fmtTOD(t)}`)}
 function startOther(ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();const i=$('#oBib');const a=byBib(intOrNull(i&&i.value));
@@ -1293,7 +1323,7 @@ ${ev.map(e=>{const r=e.bib!=null?rb[e.bib]:null;const bad=!r||cnt[e.bib]>1;const
 <div class="row"><input id="mT" class="md" placeholder="10:05:31.4"><input id="mB" class="sm" type="number" placeholder="Nr"><button class="btn" onclick="manualEv()">Eintragen</button></div></div>`;
 }
 function arr(k){return k==='lap'?S.laps:S.finishes}
-function mark(k,bib,ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();if(ENDED()){toast('Rennen ist beendet – unter Start „Rennen fortsetzen“');return}
+function mark(k,bib,ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();if(ENDED()){toast(CLOSED()?'Wettkampf ist abgeschlossen – nur Ansicht':'Rennen ist beendet – unter Start „Rennen fortsetzen“');return}
   if(bib!=null&&arr(k).some(e=>e.bib===bib&&Math.abs(t-e.t)<3000)){toast(`Doppelt gedrückt – ignoriert (Nr. ${bib})`);return}
   const a=bib!=null?byBib(bib):null;
   if(a){const r=compute().find(x=>x.a.id===a.id);if(r&&r.cur!=null&&t-r.cur<2000){toast('Zu schnell – doppelt gedrückt? Ignoriert');return}}
@@ -1312,12 +1342,12 @@ function undoStep(id){const a=S.athletes.find(x=>x.id===id);if(!a)return;
     if(Number.isFinite(m.out)){m.out=null;save();render();toast('„Verlassen der Matte“ zurückgenommen');return}
     if(Number.isFinite(m.in)){mat[i]=null;save();render();toast('„Auf der Matte“ zurückgenommen');return}}
   toast('Nichts zum Rückgängigmachen')}
-function matIn(id,k,ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();if(ENDED()){toast('Rennen ist beendet – unter Start „Rennen fortsetzen“');return}const a=S.athletes.find(x=>x.id===id);if(!a)return;
+function matIn(id,k,ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();if(ENDED()){toast(CLOSED()?'Wettkampf ist abgeschlossen – nur Ansicht':'Rennen ist beendet – unter Start „Rennen fortsetzen“');return}const a=S.athletes.find(x=>x.id===id);if(!a)return;
   a.mat=a.mat||[];if(a.mat[k]&&Number.isFinite(a.mat[k].in))return;
   const r=compute().find(x=>x.a.id===id);if(r&&r.cur!=null&&t-r.cur<2000){toast('Zu schnell – doppelt gedrückt? Ignoriert');return}
   a.mat[k]={in:t,out:null};save();render();if(AC)beep(700,.06);
   const r2=compute().find(x=>x.a.id===id);toast(`Nr. ${a.bib} auf der Matte (${stages()[k]}) · Runde ${r2.splits.length}: ${fmtDur(r2.splits[r2.splits.length-1])}`)}
-function matOut(id,k,ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();if(ENDED()){toast('Rennen ist beendet – unter Start „Rennen fortsetzen“');return}const a=S.athletes.find(x=>x.id===id);if(!a||!a.mat||!a.mat[k])return;
+function matOut(id,k,ev){const t=Date.now();if(ev&&ev.preventDefault)ev.preventDefault();if(ENDED()){toast(CLOSED()?'Wettkampf ist abgeschlossen – nur Ansicht':'Rennen ist beendet – unter Start „Rennen fortsetzen“');return}const a=S.athletes.find(x=>x.id===id);if(!a||!a.mat||!a.mat[k])return;
   if(t-a.mat[k].in<2000){toast('Zu schnell – doppelt gedrückt? Ignoriert');return}
   a.mat[k].out=t;save();render();if(AC)beep(1000,.06);toast(`Nr. ${a.bib} ${stages()[k]}: Schießzeit ${fmtDur(t-a.mat[k].in)}`)}
 function clearMat(id,i){const a=S.athletes.find(x=>x.id===id);if(a&&a.mat){a.mat[i]=null;save();render()}}
@@ -1370,7 +1400,7 @@ function vErg(){
 ${rs.map(r=>`<tr>${cols.map(c=>{const t=c.v(r);if(c.key==='total')return `<td class="num">${ERGKEY()==='net'?(r.status==='OK'?esc(t):stTag(r.status)):`<b>${r.status==='OK'?esc(t):stTag(r.status)}</b>`}</td>`;if(c.key==='net'&&ERGKEY()==='net')return `<td class="num"><b>${esc(t)}</b></td>`;if(c.key==='rank'||c.key==='name')return `<td>${c.key==='rank'?'<b>'+esc(t)+'</b>':esc(t)}</td>`;return `<td class="${c.num?'num':''}">${esc(t)}</td>`}).join('')}</tr>`).join('')}
 </table></div>`;
   const chooser=COLDEF.filter(([k])=>!(k in av)||av[k]).map(([k,l])=>`<label class="chip ${colOn(k)?'on':''}"><input type="checkbox" ${colOn(k)?'checked':''} onchange="setCol('${k}',this.checked)">${esc(l)}</label>`).join('');
-  return `<div class="card"><h2>${esc(S.settings.title)} – ${ERGKEY()==='net'?'schnellste Laufzeiten':'Ergebnis'}</h2>
+  return `<div class="card"><div class="row" style="justify-content:space-between;margin:0"><h2 style="margin:0">${esc(S.settings.title)} – ${ERGKEY()==='net'?'schnellste Laufzeiten':'Ergebnis'}</h2>${CLOSED()?'<span class="tag ok">🔒 abgeschlossen</span>':'<button class="btn acc noprint" onclick="closeCompAsk()">✓ Wettkampf abschließen</button>'}</div>
 <p class="hint">${esc(infoLine())} · ${fin} im Ziel · ${run} auf der Strecke · Stand ${fmtTOD(Date.now()).slice(0,8)}</p>
 <div class="row noprint"><div class="seg2" title="Sortierung"><button class="${ERGKEY()==='total'?'on':''}" onclick="S.settings.ergSort='total';save();render()">nach Endzeit</button><button class="${ERGKEY()==='net'?'on':''}" onclick="S.settings.ergSort='net';save();render()">nach Laufzeit (Netto)</button></div>
 <div class="seg2"><button class="${ALL?'':'on'}" onclick="ALL=false;render()">nach Klassen</button><button class="${ALL?'on':''}" onclick="ALL=true;render()">Gesamt</button></div>
