@@ -21,6 +21,8 @@
 body{margin:0;font-family:"Montserrat",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
 header{background:linear-gradient(120deg,var(--lila-d),var(--lila) 60%,#6f5aa8);border-bottom:4px solid var(--tk);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
 header h1{font-size:17px;margin:0;flex:1;min-width:160px;font-weight:700;line-height:1.15}
+.syncpill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;white-space:nowrap}
+.syncpill.ok{background:var(--tk);color:#1d1533}.syncpill.err{background:#c1121f}.syncpill.offline{background:#b7791f}.syncpill.busy{background:rgba(255,255,255,.3)}
 header h1 .ver{font-weight:600;letter-spacing:.05em;color:rgba(255,255,255,.55);margin-left:4px}
 #pwabar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:var(--lila-d);color:#fff;padding:10px 14px;border-radius:12px;display:none;gap:12px;align-items:center;z-index:70;box-shadow:0 4px 16px rgba(0,0,0,.25)}
 #pwabar button{background:var(--tk);color:#1d1533;border:0;border-radius:8px;padding:7px 12px;font-weight:700}
@@ -178,7 +180,7 @@ th.mcol,td.mcol{text-align:center;white-space:nowrap}
 <body>
 <header class="noprint">
   <h1><span class="brand">ROCKET ROOKIES <span class="ver" id="ver"></span></span><span id="title">Biathlon Prolog</span></h1>
-  <div id="clock">--:--:--</div>
+  <div id="syncpill" class="syncpill off" onclick="if(S)closeComp();else go('wettkaempfe')">lokal</div><div id="clock">--:--:--</div>
   <nav id="nav"></nav>
 </header>
 <main id="main"></main>
@@ -599,7 +601,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script>
 "use strict";
-const APP_VERSION='1.0';
+const APP_VERSION='1.1';
+const _realNow=Date.now.bind(Date);let CLOCK_OFF=0;try{CLOCK_OFF=+(localStorage.getItem('rr_clock_off')||0)||0}catch(e){}
+Date.now=()=>_realNow()+CLOCK_OFF;
 const KEY='rr_zeitmessung_v2',KEY_V1='rr_prolog_v1';
 const TYPES={sprint:'Sprint / Prolog',einzel:'Einzel',verfolger:'Verfolger',massenstart:'Massenstart'};
 const PRESET={sprint:{stageNames:'L,S',penTime:true,penLoop:false,penaltyMode:'zeit',penaltySec:60,startMode:'auto',interval:30},
@@ -655,7 +659,8 @@ function loadDB(){let db=null;try{const r=localStorage.getItem(KEY);if(r)db=JSON
   DB.comps.forEach(c=>c.athletes.forEach(attach));
   S=DB.comps.find(c=>c.id===DB.activeId)||null;
   if(!db&&DB.comps.length)save();}
-function save(){if(S)S.updatedAt=nowIso();if(!STORE_OK)return;try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){STORE_OK=false}}
+function saveLocal(){if(!STORE_OK)return;try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){STORE_OK=false}}
+function save(){if(S)S.updatedAt=nowIso();saveLocal();if(typeof syncSoon==='function')syncSoon()}
 loadDB();
 window.addEventListener('storage',e=>{if(e.key===KEY){loadDB();render()}});
 function withComp(c,fn){const prev=S;S=c;try{return fn()}finally{S=prev}}
@@ -755,7 +760,7 @@ let WIZOPEN=null;
 function vComps(){
   const list=DB.comps.slice().sort((x,y)=>(y.settings.date||'').localeCompare(x.settings.date||'')||(y.createdAt||'').localeCompare(x.createdAt||''));
   if(WIZOPEN===null)WIZOPEN=!list.length;
-  const top=`<div class="hometop"><div><h2 style="margin:0">Wettkämpfe</h2><p class="hint" style="margin:2px 0 0">${list.length?list.length+' gespeichert · auf diesem Gerät':'Noch kein Wettkampf angelegt'}</p></div>
+  const top=`<div class="hometop"><div><h2 style="margin:0">Wettkämpfe</h2><p class="hint" style="margin:2px 0 0">${list.length?list.length+' gespeichert · '+(LOGGED()?'mit Cloud abgeglichen':'nur auf diesem Gerät'):'Noch kein Wettkampf angelegt'}</p></div>
 ${WIZOPEN?'':'<button class="btn acc big" onclick="WIZOPEN=true;render()">+ Neuer Wettkampf</button>'}</div>`;
   const tiles=list.length&&!WIZOPEN?`<div class="comptiles">${list.map(c=>{const[st,cl]=compStatus(c);return `<div class="ctile">
 <div class="ctop"><span class="tag ${cl}">${st}</span><span class="hint">${esc(fmtDate(c.settings.date))}</span></div>
@@ -765,7 +770,7 @@ ${WIZOPEN?'':'<button class="btn acc big" onclick="WIZOPEN=true;render()">+ Neue
 <button class="linkbtn" onclick="copyComp('${c.id}')" title="Einstellungen und Starter übernehmen, ohne Zeiten">Kopieren</button>
 <button class="linkbtn" onclick="delCompAsk('${c.id}')">Löschen</button></div></div>`}).join('')}</div>`:'';
   return top+(WIZOPEN?vWizard(list):tiles)+`
-${installBox()}<details class="more"><summary>Sportler, Backup & Probelauf</summary>
+${installBox()}${syncBox()}<details class="more"><summary>Sportler, Backup & Probelauf</summary>
 <div class="row" style="margin-top:10px"><button class="btn alt" onclick="go('sportler')">Sportlerliste verwalten (${DB.people.length})</button>
 <button class="btn alt" onclick="exportAll(true)">Gesamt-Backup herunterladen</button><button class="btn alt" onclick="exportAll(false)">Gesamt-Backup kopieren</button>
 <button class="btn alt" onclick="importAllDlg()">Backup einspielen</button><button class="btn alt" onclick="loadDemo()">Probelauf mit Testdaten</button></div>
@@ -1496,6 +1501,128 @@ function signals(now){if(!SOUND||!AC||!S||!GUN()||!raceOn()||ENDED())return;cons
     if(gap>=5000){const sec=Math.ceil(diff/1000),k='c:'+t+':'+sec;if(sec>=1&&sec<=5&&!beeped.has(k)){beeped.add(k);beep(880,.12)}}})}
 setInterval(()=>signals(Date.now()),50);
 
+/* ---------- CLOUD-SYNC (Supabase) ---------- */
+const SUPA_DEFAULT={url:'https://qzkcwyhmdngnozgtgunl.supabase.co',key:'sb_publishable_XCOw0dyt3LpARXCxeO2obw_zlXfW3JS'};
+const SYKEY='rr_sync_v1',LOCAL_SET=['raceSort','cols','ergSort','pdfLand','mig2','mig3'],KORD={person:0,comp:1,part:2,entry:3,fin:4};
+let SY={session:null,lastPull:null,synced:{},lastOk:null,err:''},SYNCING=false,SYNC_T=null,SYNC_STATE='off',NEED_RENDER=false,PENDING=[];
+try{const r=localStorage.getItem(SYKEY);if(r)SY=Object.assign(SY,JSON.parse(r))}catch(e){}
+function supa(){let o={};try{o=JSON.parse(localStorage.getItem('rr_supa_cfg')||'{}')}catch(e){}return {url:(o.url||SUPA_DEFAULT.url).replace(/\/(rest\/v1\/?)?$/,''),key:o.key||SUPA_DEFAULT.key}}
+function sySave(){try{localStorage.setItem(SYKEY,JSON.stringify(SY))}catch(e){}}
+const LOGGED=()=>!!(SY.session&&SY.session.access_token);
+/* Datensätze aus dem lokalen Stand ableiten */
+function buildRecords(){const m=new Map(),nn=v=>v===undefined?null:v;
+  DB.people.forEach(p=>{if(p.demo)return;m.set('p:'+p.id,{kind:'person',comp_id:null,data:{name:p.name||'',cls:p.cls||'',birthYear:p.birthYear||null}})});
+  DB.comps.forEach(c=>{if(c.demo)return;const set={};Object.keys(c.settings).sort().forEach(k=>{if(!LOCAL_SET.includes(k)&&c.settings[k]!==undefined)set[k]=c.settings[k]});
+    m.set('c:'+c.id,{kind:'comp',comp_id:c.id,data:{type:c.type,createdAt:c.createdAt||null,settings:set}});
+    c.athletes.forEach(a=>{if(!a.uid)a.uid=uuid();
+      m.set('a:'+a.uid,{kind:'part',comp_id:c.id,data:{pid:nn(a.pid),bib:nn(a.bib),status:a.status||'',gap:Number.isFinite(a.gap)?a.gap:null,gapNoRes:!!a.gapNoRes,slot:Number.isInteger(a.slot)?a.slot:null,start:a.start||'',startT:Number.isFinite(a.startT)?a.startT:null,clsOverride:a.clsOverride||null,autoSt:!!a.autoSt}});
+      (a.mat||[]).forEach((x,i)=>{if(!x)return;if(Number.isFinite(x.in))m.set(`e:${a.uid}:mi${i}`,{kind:'entry',comp_id:c.id,data:{part:a.uid,k:'mi',i,v:x.in}});
+        if(Number.isFinite(x.out))m.set(`e:${a.uid}:mo${i}`,{kind:'entry',comp_id:c.id,data:{part:a.uid,k:'mo',i,v:x.out}})});
+      (a.misses||[]).forEach((v,i)=>{if(Number.isInteger(v))m.set(`e:${a.uid}:ms${i}`,{kind:'entry',comp_id:c.id,data:{part:a.uid,k:'ms',i,v}})})});
+    c.finishes.forEach(f=>{if(!f.uid)f.uid=uuid();m.set('f:'+f.uid,{kind:'fin',comp_id:c.id,data:{bib:nn(f.bib),t:f.t,manual:!!f.manual}})})});
+  return m}
+const hashOf=r=>r.kind+'|'+JSON.stringify(r.data);
+/* Fremde Datensätze in den lokalen Stand übernehmen */
+function ensureComp(id){let c=DB.comps.find(x=>x.id===id);if(!c){c=fix(def());c.id=id;c.settings.title='(wird geladen)';DB.comps.push(c)}return c}
+function findPart(uid){for(const c of DB.comps){const a=c.athletes.find(x=>x.uid===uid);if(a)return [c,a]}return [null,null]}
+function applyRemote(r){const d=r.data||{},del=!!r.deleted;
+  if(r.kind==='person'){const id=r.id.slice(2);let p=person(id);
+    if(del){if(p&&!DB.comps.some(c=>c.athletes.some(a=>a.pid===id)))DB.people=DB.people.filter(x=>x!==p)}
+    else{if(!p){p={id,createdAt:nowIso()};DB.people.push(p)}p.name=d.name||'';p.cls=d.cls||'';p.birthYear=d.birthYear||null;p.updatedAt=r.updated_at}return true}
+  if(r.kind==='comp'){const id=r.comp_id||r.id.slice(2);let c=DB.comps.find(x=>x.id===id);
+    if(del){if(c){DB.comps=DB.comps.filter(x=>x!==c);if(S===c){S=null;DB.activeId=null}}return true}
+    c=ensureComp(id);c.type=TYPES[d.type]?d.type:'sprint';if(d.createdAt)c.createdAt=d.createdAt;
+    const keep={};LOCAL_SET.forEach(k=>{if(k in c.settings)keep[k]=c.settings[k]});c.settings=Object.assign(def().settings,d.settings||{},keep);return true}
+  if(r.kind==='part'){const uid=r.id.slice(2);let[c,a]=findPart(uid);
+    if(del){if(a)c.athletes=c.athletes.filter(x=>x!==a);return true}
+    c=c||ensureComp(r.comp_id);
+    if(!a){a={id:c.nextId++,uid,misses:[],mat:[]};c.athletes.push(a);a.pid=d.pid;attach(a)}
+    a.pid=d.pid;a.bib=d.bib;a.status=d.status||'';a.start=d.start||'';
+    const opt=(k,v)=>{if(v===null||v===undefined||v===false)delete a[k];else a[k]=v};
+    opt('gap',d.gap);opt('gapNoRes',d.gapNoRes);opt('slot',d.slot);opt('startT',d.startT);opt('clsOverride',d.clsOverride);opt('autoSt',d.autoSt);return true}
+  if(r.kind==='entry'){const mm=r.id.match(/^e:(.+):(mi|mo|ms)(\d+)$/);if(!mm)return true;const k=mm[2],i=+mm[3];const[,a]=findPart(mm[1]);if(!a)return !!del;
+    if(k==='ms'){a.misses=a.misses||[];a.misses[i]=del?null:d.v}
+    else{a.mat=a.mat||[];const m=a.mat[i]||{in:null,out:null};m[k==='mi'?'in':'out']=del?null:d.v;a.mat[i]=(Number.isFinite(m.in)||Number.isFinite(m.out))?m:null}return true}
+  if(r.kind==='fin'){const uid=r.id.slice(2),c=DB.comps.find(x=>x.finishes.some(f=>f.uid===uid))||DB.comps.find(x=>x.id===r.comp_id)||(del?null:ensureComp(r.comp_id));if(!c)return true;
+    const f=c.finishes.find(x=>x.uid===uid);if(del){if(f)c.finishes=c.finishes.filter(x=>x!==f);return true}
+    if(f){f.t=d.t;f.bib=d.bib;f.manual=!!d.manual}else c.finishes.push({id:c.nextId++,uid,t:d.t,bib:d.bib,manual:!!d.manual});return true}
+  return true}
+/* HTTP */
+async function api(path,opt={},retry=true){const cfg=supa();await ensureToken();
+  const h=Object.assign({apikey:cfg.key,'Content-Type':'application/json'},opt.headers||{});if(SY.session)h.Authorization='Bearer '+SY.session.access_token;
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),15000);
+  try{const res=await fetch(cfg.url+path,Object.assign({},opt,{headers:h,signal:ctl.signal}));
+    if(res.status===401&&retry&&SY.session&&SY.session.refresh_token){if(await refreshToken())return api(path,opt,false)}
+    if(!res.ok){let t='';try{t=await res.text()}catch(e){}throw new Error(res.status+' '+t.slice(0,200))}
+    const ct=res.headers.get('content-type')||'';return ct.includes('json')?res.json():null}finally{clearTimeout(to)}}
+async function ensureToken(){if(SY.session&&SY.session.expires_at&&SY.session.expires_at*1000-_realNow()<60000)await refreshToken()}
+async function refreshToken(){const cfg=supa();try{const res=await fetch(cfg.url+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:cfg.key,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:SY.session.refresh_token})});
+  if(!res.ok){if(res.status===400||res.status===401){SY.session=null;sySave();SY.err='Anmeldung abgelaufen – bitte neu anmelden'}return false}
+  const j=await res.json();setSession(j);return true}catch(e){return false}}
+function setSession(j){SY.session={access_token:j.access_token,refresh_token:j.refresh_token,expires_at:j.expires_at||Math.floor(_realNow()/1000)+(j.expires_in||3600),email:(j.user&&j.user.email)||(SY.session&&SY.session.email)||''};sySave()}
+async function login(){const em=$('#syEmail').value.trim(),pw=$('#syPw').value;if(!em||!pw){toast('E-Mail und Passwort eingeben');return}
+  const cfg=supa();SYNC_STATE='busy';pill();
+  try{const res=await fetch(cfg.url+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:cfg.key,'Content-Type':'application/json'},body:JSON.stringify({email:em,password:pw})});
+    const j=await res.json().catch(()=>({}));if(!res.ok){SYNC_STATE='err';SY.err=j.error_description||j.msg||j.message||('Fehler '+res.status);sySave();render();toast('Anmeldung fehlgeschlagen');return}
+    SY.lastPull=null;SY.err='';setSession(j);toast('Angemeldet – Daten werden abgeglichen');await measureClock(true);await syncNow(true);render()}
+  catch(e){SYNC_STATE='offline';SY.err='Keine Verbindung zum Server';render();toast('Keine Verbindung – später erneut versuchen')}}
+function logoutAsk(){ask('Abmelden? Die Daten bleiben auf diesem Gerät, werden aber nicht mehr abgeglichen, bis du dich wieder anmeldest.',()=>{SY.session=null;SY.lastPull=null;SY.synced={};sySave();SYNC_STATE='off';render();toast('Abgemeldet')},'Abmelden')}
+/* Uhrenabgleich: alle Geräte nutzen die Serverzeit */
+async function measureClock(force){if(!LOGGED()||!navigator.onLine)return;let best=null;
+  for(let k=0;k<3;k++){const t0=_realNow();try{const v=await api('/rest/v1/rpc/server_time',{method:'POST',body:'{}'});const t1=_realNow(),st=typeof v==='number'?v:+v;
+    if(Number.isFinite(st)){const rtt=t1-t0;if(!best||rtt<best.rtt)best={rtt,off:st-(t0+t1)/2}}}catch(e){return}}
+  if(!best)return;const dOff=Math.round(best.off);
+  if(force||Math.abs(dOff-CLOCK_OFF)>150){CLOCK_OFF=dOff;try{localStorage.setItem('rr_clock_off',String(CLOCK_OFF))}catch(e){}}
+  SY.clock={off:CLOCK_OFF,rtt:Math.round(best.rtt),at:nowIso()};sySave()}
+/* Abgleich: erst eigene Änderungen senden, dann fremde holen */
+async function pushAll(){const recs=buildRecords(),up=[];
+  recs.forEach((r,id)=>{const h=hashOf(r);if(SY.synced[id]!==h)up.push({id,kind:r.kind,comp_id:r.comp_id,data:r.data,deleted:false,_h:h})});
+  Object.keys(SY.synced).forEach(id=>{if(!recs.has(id)){const kind={p:'person',c:'comp',a:'part',e:'entry',f:'fin'}[id[0]];up.push({id,kind,comp_id:kind==='comp'?id.slice(2):null,data:{},deleted:true,_h:null})}});
+  up.sort((a,b)=>KORD[a.kind]-KORD[b.kind]);
+  for(let i=0;i<up.length;i+=400){const part=up.slice(i,i+400);
+    await api('/rest/v1/sync_records?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(part.map(({_h,...r})=>r))});
+    part.forEach(r=>{if(r._h)SY.synced[r.id]=r._h;else delete SY.synced[r.id]});sySave()}
+  return up.length}
+async function pullAll(initial){const since=SY.lastPull?new Date(Date.parse(SY.lastPull)-15000).toISOString():null;let rows=[],off=0;
+  while(true){const q='/rest/v1/sync_records?select=id,kind,comp_id,data,deleted,updated_at&order=updated_at.asc,id.asc&limit=1000&offset='+off+(since?'&updated_at=gt.'+encodeURIComponent(since):'');
+    const b=await api(q,{method:'GET'});rows=rows.concat(b||[]);if(!b||b.length<1000)break;off+=1000}
+  const todo=PENDING.concat(rows).sort((a,b)=>KORD[a.kind]-KORD[b.kind]||(a.updated_at||'').localeCompare(b.updated_at||''));PENDING=[];
+  const local=buildRecords();let changed=false;
+  todo.forEach(r=>{const h=r.deleted?null:hashOf(r),cur=local.get(r.id),curH=cur?hashOf(cur):null;
+    if(h!==null&&h===curH){SY.synced[r.id]=h;return}
+    // lokal geändert seit letztem Abgleich und noch nicht gesendet -> lokale Änderung behalten (wird gleich gesendet)
+    if(!initial&&curH!==null&&SY.synced[r.id]!==undefined&&curH!==SY.synced[r.id])return;
+    if(applyRemote(r)){changed=true;if(r.deleted)delete SY.synced[r.id];else SY.synced[r.id]=h}else{r._tries=(r._tries||0)+1;if(r._tries<30)PENDING.push(r)}});
+  rows.forEach(r=>{if(!SY.lastPull||r.updated_at>SY.lastPull)SY.lastPull=r.updated_at});
+  if(!SY.lastPull)SY.lastPull=new Date(Date.now()-60000).toISOString();
+  if(changed){DB.comps.forEach(c=>c.athletes.forEach(attach));if(DB.activeId&&!S)S=DB.comps.find(c=>c.id===DB.activeId)||null;saveLocal()}
+  return {n:rows.length,changed}}
+/* Abgleich: beim ersten Mal erst holen (Server gewinnt), danach erst senden, dann holen */
+async function syncNow(manual){if(!LOGGED()||SYNCING)return;if(!navigator.onLine){SYNC_STATE='offline';pill();return}
+  SYNCING=true;SYNC_STATE='busy';pill();let changed=false,sent=0,got=0;
+  try{if(!SY.lastPull){const p=await pullAll(true);got=p.n;changed=p.changed;sent=await pushAll()}
+    else{sent=await pushAll();const p=await pullAll(false);got=p.n;changed=p.changed}
+    SY.lastOk=nowIso();SY.err='';SYNC_STATE='ok';sySave();
+    if(manual)toast(`Abgleich ok · ${sent} gesendet, ${got} empfangen`)}
+  catch(e){SYNC_STATE=navigator.onLine?'err':'offline';SY.err=String(e.message||e).slice(0,160);sySave();if(manual)toast('Abgleich fehlgeschlagen: '+SY.err)}
+  finally{SYNCING=false;pill();if(changed)softRender()}}
+function softRender(){const ae=document.activeElement;if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)||document.querySelector('#modal[style*="flex"]')){NEED_RENDER=true;return}render()}
+document.addEventListener('focusout',()=>{if(NEED_RENDER)setTimeout(()=>{const ae=document.activeElement;if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))){NEED_RENDER=false;render()}},50)});
+function syncSoon(){if(!LOGGED())return;clearTimeout(SYNC_T);SYNC_T=setTimeout(()=>syncNow(false),800)}
+setInterval(()=>{if(LOGGED()&&document.visibilityState==='visible'&&navigator.onLine)syncNow(false)},5000);
+setInterval(()=>{if(LOGGED())measureClock(false)},10*60*1000);
+window.addEventListener('online',()=>{syncNow(false)});window.addEventListener('offline',()=>{SYNC_STATE='offline';pill()});
+function pill(){const el=document.getElementById('syncpill');if(!el)return;
+  const st=!LOGGED()?['off','lokal']:!navigator.onLine?['offline','offline']:SYNC_STATE==='busy'?['busy','gleicht ab…']:SYNC_STATE==='err'?['err','Sync-Fehler']:['ok','synchron'];
+  el.className='syncpill '+st[0];el.textContent=(st[0]==='ok'?'☁ ':st[0]==='offline'?'⚠ ':st[0]==='err'?'⚠ ':st[0]==='busy'?'⟳ ':'')+st[1];el.title=SY.err||(SY.lastOk?'Letzter Abgleich '+fmtTOD(Date.parse(SY.lastOk)).slice(0,8):'')}
+function syncBox(){const cnt=Object.keys(SY.synced).length;
+  if(!LOGGED())return `<div class="card"><h2>Cloud-Sync</h2><p class="hint">Mit einem Trainer-Konto anmelden, damit mehrere Geräte (Start, Schießstand, Ziel) dieselben Wettkämpfe sehen und alles in der Cloud gesichert ist. Ohne Anmeldung arbeitet die App wie bisher nur auf diesem Gerät.</p>
+${SY.err?`<div class="banner bad">${esc(SY.err)}</div>`:''}
+<form class="row" onsubmit="event.preventDefault();login()"><input id="syEmail" type="email" autocomplete="username" placeholder="E-Mail" style="flex:1;min-width:180px"><input id="syPw" type="password" autocomplete="current-password" placeholder="Passwort" style="flex:1;min-width:150px"><button class="btn acc" type="submit">Anmelden</button></form></div>`;
+  return `<div class="card"><div class="row" style="justify-content:space-between;margin:0"><div><h2 style="margin:0">Cloud-Sync</h2><p class="hint" style="margin:2px 0 0">Angemeldet als <b>${esc(SY.session.email||'')}</b> · ${SY.lastOk?'letzter Abgleich '+fmtTOD(Date.parse(SY.lastOk)).slice(0,8):'noch kein Abgleich'} · ${cnt} Datensätze${SY.clock?` · Uhr ${SY.clock.off>=0?'+':''}${(SY.clock.off/1000).toFixed(1)} s zur Serverzeit (±${Math.round(SY.clock.rtt/2)} ms)`:''}</p></div>
+<div class="row" style="margin:0"><button class="btn" onclick="syncNow(true)">Jetzt abgleichen</button><button class="linkbtn" onclick="logoutAsk()">Abmelden</button></div></div>
+${SY.err?`<div class="banner bad" style="margin-top:10px">${esc(SY.err)}</div>`:''}</div>`}
+
 /* ---------- PWA: Installation, Offline, Updates ---------- */
 const STANDALONE=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}catch(e){return false}};
 const IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
@@ -1520,7 +1647,7 @@ function applyUpdate(){const w=SW_REG&&SW_REG.waiting;if(w)w.postMessage('SKIP_W
     try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}});
 })();
 setInterval(()=>live(false),100);
-render();
+render();pill();if(LOGGED())setTimeout(()=>{measureClock(false);syncNow(false)},500);
 </script>
 
 </body>
